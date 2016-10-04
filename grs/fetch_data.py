@@ -43,28 +43,22 @@ class FetchData(object):
         self.__get_mons = 0
         self.__get_no = 0
         self.__info = ()
-        self.__raw_rows_name = []
-        self.__raw_data = ()
-        self._twse = None
 
-    def fetch_data(self, *args, **kwargs):
-        """ Inherit :py:func:`grs.fetch_data.TWSEFetch.fetch_data` or
-                    :py:func:`grs.fetch_data.OTCFetch.fetch_data`
+    def fetch_data(self, stock_no, nowdatetime):
+        """ abstract method 
         """
-        return self.fetch_data(*args, **kwargs)
+        raise NotImplementedError("fetch_data is abstract")
 
-    def serial_fetch(self, stock_no, month, twse=None):
+    def serial_fetch(self, stock_no, month):
         """ 串接每月資料 舊→新
 
             :param str stock_no: 股票代碼
             :param int month: 擷取 n 個月的資料
-            :param bool twse: 指定是否為上市資料
             :rtype: tuple
         """
         result = ()
         self.__get_mons = month
         self.__get_no = stock_no
-        self._twse = twse
         for i in range(month):
             nowdatetime = datetime.today() - relativedelta(months=i)
             tolist = self.to_list(self.fetch_data(stock_no, nowdatetime))
@@ -95,7 +89,7 @@ class FetchData(object):
             except (IndexError, ValueError):
                 pass
             tolist.append(i)
-        if self._twse:
+        if isinstance(self, TWSEFetch):
             if tolist:
                 _stock_info = tolist[0][0].split(' ')[1].strip()
                 self.__info = (_stock_info[:4],
@@ -111,7 +105,7 @@ class FetchData(object):
                     return tuple(tolist[5:-1])
             return tuple([])
 
-    def plus_mons(self, month):
+    def f_plus_mons(self, raw_data, month):
         """ 增加 n 個月的資料
 
             :param int month: 增加 n 個月的資料
@@ -119,7 +113,7 @@ class FetchData(object):
         """
         result = []
         exist_mons = self.__get_mons
-        oldraw = list(self.__raw_data)
+        oldraw = list(raw_data)
         for i in range(month):
             nowdatetime = datetime.today() - relativedelta(months=exist_mons) -\
                           relativedelta(months=i)
@@ -133,6 +127,7 @@ class FetchData(object):
 class OTCFetch(FetchData):
     ''' OTCFetch '''
     def __init__(self):
+        super(TWSEFetch, self).__init__()
         self.__url = []
 
     def fetch_data(self, stock_no, nowdatetime):
@@ -174,6 +169,7 @@ class TWSEFetch(FetchData):
     ''' TWSEFetch '''
 
     def __init__(self):
+        super(TWSEFetch, self).__init__()
         self.__url = []
 
     def fetch_data(self, stock_no, nowdatetime):
@@ -263,7 +259,7 @@ class SimpleAnalytics(object):
 
             :param int month: 增加 n 個月的資料
         """
-        self.__raw_data = self.plus_mons(month)
+        self.__raw_data = self.f_plus_mons(self.__raw_data, month)
 
     def out_putfile(self, fpath):
         """ 輸出成 CSV 檔
@@ -468,7 +464,8 @@ class Stock(object):
         :raises StockNoError: 查無股票代碼
     """
     def __init__(self, stock_no, mons=3, twse=False, otc=False):
-        pass
+        super(Stock, self).__init__()
+        SimpleAnalytics.__init__(self)
 
     def __new__(cls, stock_no, mons=3, twse=False, otc=False):
         assert isinstance(stock_no, basestring), '`stock_no` must be a string'
@@ -476,22 +473,21 @@ class Stock(object):
 
         if twse and not otc:
             stock_proxy = type('Stock', (TWSEFetch, SimpleAnalytics), {})()
-            twse = True
         elif not twse and otc:
             stock_proxy = type('Stock', (OTCFetch, SimpleAnalytics), {})()
-            twse = False
         elif stock_no in TWSENo().all_stock_no:
             stock_proxy = type('Stock', (TWSEFetch, SimpleAnalytics), {})()
-            twse = True
         elif stock_no in OTCNo().all_stock_no:
             stock_proxy = type('Stock', (OTCFetch, SimpleAnalytics), {})()
-            twse = False
         else:
             raise StockNoError()
 
         stock_proxy.__init__()
+        twse = isinstance(stock_proxy, TWSEFetch)
+        otc = isinstance(stock_proxy, OTCFetch)
+
         try:
-            cls.__raw_data = stock_proxy.serial_fetch(stock_no, mons, twse)
+            cls.__raw_data = stock_proxy.serial_fetch(stock_no, mons)
             stock_proxy._load_data(cls.__raw_data)
         except urllib3.exceptions.HTTPError:
             raise ConnectionError(), u'IN OFFLINE, NO DATA FETCH.'
