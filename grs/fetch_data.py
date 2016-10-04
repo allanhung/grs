@@ -127,7 +127,7 @@ class FetchData(object):
 class OTCFetch(FetchData):
     ''' OTCFetch '''
     def __init__(self):
-        super(TWSEFetch, self).__init__()
+        super(OTCFetch, self).__init__()
         self.__url = []
 
     def fetch_data(self, stock_no, nowdatetime):
